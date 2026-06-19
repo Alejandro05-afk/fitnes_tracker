@@ -38,4 +38,11 @@
             android:value="2" />
 
     </application>
+
+    <!-- NUEVO — requerido por flutter_tts en Android 11+ -->
+    <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
+    </queries>
 </manifest>

@@ -48,7 +48,6 @@ class AccelerometerDataSourceImpl implements AccelerometerDataSource {
   @override
   Future<bool> requestPermissions() async {
     final activityStatus = await Permission.activityRecognition.request();
-    final sensorsStatus = await Permission.sensors.request();
-    return activityStatus.isGranted && sensorsStatus.isGranted;
+    return activityStatus.isGranted;
   }
 }

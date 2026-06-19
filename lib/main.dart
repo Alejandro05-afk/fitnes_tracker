@@ -1,11 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:permission_handler/permission_handler.dart';
 import 'features/auth/data/datasources/biometric_datasource.dart';
 import 'features/auth/domain/usecases/authenticate_user.dart';
 import 'features/auth/presentation/bloc/auth_bloc.dart';
 import 'features/auth/presentation/pages/login_page.dart';
 import 'features/steps/presentation/widgets/step_counter_widget.dart';
 import 'features/tracking/presentation/widgets/route_map_widget.dart';
+
+// Imports para la detección de actividad y caídas
+import 'features/activity_detection/data/datasources/motion_sensor_datasource.dart';
+import 'features/activity_detection/data/datasources/voice_announcer.dart';
+import 'features/activity_detection/presentation/cubit/activity_detection_cubit.dart';
+import 'features/activity_detection/presentation/widgets/activity_status_widget.dart';
+import 'features/activity_detection/presentation/widgets/fall_confirmation_dialog.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -60,26 +68,72 @@ class _AuthWrapperState extends State<AuthWrapper> {
   }
 }
 
-class HomePage extends StatelessWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
+  State<HomePage> createState() => _HomePageState();
+}
+
+class _HomePageState extends State<HomePage> {
+  late final ActivityDetectionCubit _cubit;
+
+  @override
+  void initState() {
+    super.initState();
+    _cubit = ActivityDetectionCubit(
+      dataSource: MotionSensorDataSourceImpl(),
+      announcer: VoiceAnnouncerImpl(),
+    );
+    _requestPermissionAndStart();
+  }
+
+  Future<void> _requestPermissionAndStart() async {
+    final status = await Permission.activityRecognition.request();
+    if (status.isGranted) {
+      _cubit.start();
+    }
+  }
+
+  @override
+  void dispose() {
+    _cubit.close();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Fitness Tracker'),
-        backgroundColor: const Color(0xFF6366F1),
-        foregroundColor: Colors.white,
-        elevation: 0,
-      ),
-      body: const SingleChildScrollView(
-        padding: EdgeInsets.all(16),
-        child: Column(
-          children: [
-            StepCounterWidget(),
-            SizedBox(height: 16),
-            RouteMapWidget(),
-          ],
+    return BlocProvider.value(
+      value: _cubit,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Fitness Tracker'),
+          backgroundColor: const Color(0xFF6366F1),
+          foregroundColor: Colors.white,
+          elevation: 0,
+        ),
+        body: BlocListener<ActivityDetectionCubit, ActivityDetectionState>(
+          listenWhen: (prev, curr) => prev.isFallSuspected != curr.isFallSuspected,
+          listener: (context, state) {
+            if (state.isFallSuspected) {
+              FallConfirmationDialog.show(
+                context,
+                () => context.read<ActivityDetectionCubit>().resolveFallSuspicion(),
+              );
+            }
+          },
+          child: const SingleChildScrollView(
+            padding: EdgeInsets.all(16),
+            child: Column(
+              children: [
+                ActivityStatusWidget(),
+                SizedBox(height: 16),
+                StepCounterWidget(),
+                SizedBox(height: 16),
+                RouteMapWidget(),
+              ],
+            ),
+          ),
         ),
       ),
     );
