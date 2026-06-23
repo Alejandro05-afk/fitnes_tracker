@@ -1,13 +1,9 @@
-import 'package:flutter/services.dart';
+import 'dart:async';
+import 'dart:math';
+import 'package:sensors_plus/sensors_plus.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../../../../core/platform/platform_channels.dart';
 import '../../domain/entities/step_data.dart';
 
-/// DataSource para acelerómetro usando EventChannel
-///
-/// - EventChannel se usa para STREAMS de datos continuos
-/// - A diferencia de MethodChannel (petición/respuesta),
-///   EventChannel envía datos constantemente
 abstract class AccelerometerDataSource {
   Stream<StepData> get stepStream;
   Future<void> startCounting();
@@ -16,38 +12,63 @@ abstract class AccelerometerDataSource {
 }
 
 class AccelerometerDataSourceImpl implements AccelerometerDataSource {
-  /// EventChannel: para recibir stream de datos
-  final EventChannel _eventChannel = const EventChannel(
-    PlatformChannels.accelerometer
-  );
+  StreamSubscription<AccelerometerEvent>? _sub;
+  final StreamController<StepData> _controller =
+      StreamController<StepData>.broadcast();
 
-  /// MethodChannel auxiliar: para control (start/stop)
-  final MethodChannel _methodChannel = const MethodChannel(
-    '${PlatformChannels.accelerometer}/control'
-  );
+  int _stepCount = 0;
+  double _lastMagnitude = 0;
+  final List<double> _history = [];
+  static const int _historySize = 10;
 
   @override
-  Stream<StepData> get stepStream {
-    /// receiveBroadcastStream(): crea un stream que recibe
-    /// datos continuamente desde el lado Android
-    return _eventChannel.receiveBroadcastStream().map((event) {
-      return StepData.fromMap(event as Map<dynamic, dynamic>);
-    });
-  }
+  Stream<StepData> get stepStream => _controller.stream;
 
   @override
   Future<void> startCounting() async {
-    await _methodChannel.invokeMethod('start');
+    _stepCount = 0;
+    _sub = accelerometerEventStream(
+      samplingPeriod: SensorInterval.gameInterval,
+    ).listen(_onEvent, cancelOnError: false);
+  }
+
+  void _onEvent(AccelerometerEvent e) {
+    final mag = sqrt(e.x * e.x + e.y * e.y + e.z * e.z);
+
+    _history.add(mag);
+    if (_history.length > _historySize) _history.removeAt(0);
+    final avg = _history.reduce((a, b) => a + b) / _history.length;
+
+    if (mag > 12 && _lastMagnitude <= 12) _stepCount++;
+    _lastMagnitude = mag;
+
+    final type = avg < 10.5
+        ? ActivityType.stationary
+        : avg < 13.5
+            ? ActivityType.walking
+            : ActivityType.running;
+
+    _controller.add(StepData(
+      stepCount: _stepCount,
+      activityType: type,
+      magnitude: avg,
+    ));
   }
 
   @override
   Future<void> stopCounting() async {
-    await _methodChannel.invokeMethod('stop');
+    await _sub?.cancel();
+    _sub = null;
   }
 
   @override
   Future<bool> requestPermissions() async {
-    final activityStatus = await Permission.activityRecognition.request();
-    return activityStatus.isGranted;
+    final status = await Permission.activityRecognition.request();
+    return status.isGranted;
+  }
+
+  void dispose() {
+    _sub?.cancel();
+    _controller.close();
   }
 }

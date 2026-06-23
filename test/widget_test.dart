@@ -1,24 +1,20 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:fitness_tracker/core/di/injection_container.dart' as di;
 import 'package:fitness_tracker/main.dart';
 
 void main() {
+  setUpAll(() {
+    sqfliteFfiInit();
+    databaseFactory = databaseFactoryFfi;
+  });
+
   testWidgets('FitnessApp login page smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
+    await di.initDependencies();
     await tester.pumpWidget(const FitnessApp());
 
-    // Verify that the title 'Fitness Tracker' is displayed.
     expect(find.text('Fitness Tracker'), findsOneWidget);
-
-    // Verify that the fingerprint authenticate button is present.
     expect(find.text('Autenticar con Huella'), findsOneWidget);
   });
 }
